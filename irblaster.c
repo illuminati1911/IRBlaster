@@ -162,10 +162,16 @@ static void __exit ib_exit(void) {
 }
 
 static int dev_open(struct inode *inodep, struct file *filep) {
+    if (!mutex_trylock(&dev_access_mtx)) {
+        alert("Device is busy with another process!");
+        return -EBUSY;
+    }
     return 0;
 }
 
 static int dev_release(struct inode *inodep, struct file *filep) {
+    mutex_unlock(&dev_access_mtx);
+    log("Device successfully closed.");
     return 0;
 }
 
