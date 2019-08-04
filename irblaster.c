@@ -3,7 +3,7 @@
 #include <linux/device.h>
 #include <linux/kernel.h>
 
-#define DEVICE_NAME "nec"
+#define DEVICE_NAME "irblaster"
 #define CLASS_NAME "ir"
 
 #define PWM_CONTROL_OFFSET 0
@@ -26,17 +26,17 @@
 
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_AUTHOR("illuminati1911");
-MODULE_DESCRIPTION("A NEC protocol Infrared LED driver for Raspberry Pi.");
+MODULE_DESCRIPTION("An infrared LED driver for Raspberry Pi.");
 MODULE_VERSION("0.1");
 
 static int major_number;
 static char message[300] = {0};
 static unsigned int ir_gpio = 18;
-static struct class* ir_class = NULL;
-static struct device* ir_device = NULL;
+static struct class* irblaster_class = NULL;
+static struct device* irblaster_device = NULL;
 // Mutex to control/limit access to the device.
 //
-static DEFINE_MUTEX(mycdev_mutex);
+static DEFINE_MUTEX(irblaster_mutex);
 
 /*  BCM2835 Device registers:
 *
@@ -70,14 +70,14 @@ static unsigned *pwm_dat1 = 0;
 static unsigned *clk_cntl = 0;
 static unsigned *clk_div = 0;
 
-static int __init nec_drv_init(void) {
-    printk(KERN_INFO "NEC: Initializing driver...\n");
+static int __init irblaster_init(void) {
+    printk(KERN_INFO "irblaster: Initializing driver...\n");
     return 0;
 }
 
-static void __exit nec_drv_exit(void) {
-    printk(KERN_INFO "NEC: Driver closing... Bye!\n");
+static void __exit irblaster_exit(void) {
+    printk(KERN_INFO "irblaster: Driver closing... Bye!\n");
 }
 
-module_init(nec_drv_init);
-module_exit(nec_drv_exit);
+module_init(irblaster_init);
+module_exit(irblaster_exit);
