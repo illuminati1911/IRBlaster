@@ -29,6 +29,9 @@
 #define log(...) printk(KERN_INFO "irblaster: " __VA_ARGS__);
 #define alert(...) printk(KERN_ALERT "irblaster: Warning - " __VA_ARGS__);	
 
+#define CODE_BUFFER_LENGTH 0x200
+#define USM_BUFFER_LENGTH 0x21C
+
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_AUTHOR("illuminati1911");
 MODULE_DESCRIPTION("An infrared LED driver for Raspberry Pi.");
@@ -37,7 +40,7 @@ MODULE_VERSION("0.1");
 // Driver major number.
 //
 static int ib_mn;
-static char message[300] = {0};
+
 /* 
  * BCM layout number of the GPIO pin used to trasmit IR.
  *
@@ -49,12 +52,31 @@ static char message[300] = {0};
 static unsigned int ib_gpio = 18;
 static struct class* ib_class = NULL;
 static struct device* ib_device = NULL;
+
 // Mutex to control/limit access to the device.
 //
 static DEFINE_MUTEX(dev_access_mtx);
+
 // Spinlock to hold scheduler during critical operations.
 //
 static spinlock_t transmit_spinlock;
+
+// Data received from the user space.
+//
+static char usm_buffer[USM_BUFFER_LENGTH] = {0};
+
+// Infrared config to which the user space data will be mapped into.
+//
+struct ir_config {
+   unsigned leadingPulseWidth;
+   unsigned leadingGapWidth;
+   unsigned onePulseWidth;
+   unsigned oneGapWidth;
+   unsigned zeroPulseWidth;
+   unsigned zeroGapWidth;
+   unsigned useTrailingPulse;
+   unsigned char code[CODE_BUFFER_LENGTH];
+} *cfg;
 
 // Function definitions
 //
@@ -62,6 +84,8 @@ static int dev_open(struct inode *, struct file *);
 static int dev_release(struct inode *, struct file *);
 static ssize_t dev_read(struct file *, char *, size_t, loff_t *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
+static int verify_data_integrity(void);
+static void limit_range(uint *num, uint min, uint max);
 static void map_devmem_virtmem(void);
 static void unmap_devmem_virtmem(void);
 
@@ -180,7 +204,50 @@ static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *of
 }
 
 static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset) {
+    int integrity;
+    // Save buffer to message? Why?
+    //
+    sprintf(usm_buffer, "%s", buffer);
+    
+    // Map buffer to ir_config
+    //
+    cfg = (struct ir_config *)buffer;
+
+    // Check that received data is correct.
+    //
+    integrity = verify_data_integrity();
+    if (integrity < 0) {
+        return integrity;
+    }
+    log("Message: %s", cfg->code);
+    
+    return strlen(usm_buffer);
+}
+
+static int verify_data_integrity(void) {
+    int i;
+    limit_range(&cfg->leadingPulseWidth, 0, 10000);
+    limit_range(&cfg->leadingGapWidth, 0, 10000);
+    limit_range(&cfg->onePulseWidth, 0, 5000);
+    limit_range(&cfg->oneGapWidth, 0, 5000);
+    limit_range(&cfg->zeroPulseWidth, 0, 5000);
+    limit_range(&cfg->zeroGapWidth, 0, 5000);
+    limit_range(&cfg->useTrailingPulse, 0, 1);
+
+    for (i = 0; i < strlen(cfg->code); i++) {
+        if (cfg->code[i] != '0' && cfg->code[i] != '1') {
+            return -EINVAL;
+        }
+    }
     return 0;
+}
+
+static void limit_range(uint *num, uint min, uint max) {
+    if (*num > max) {
+        *num = max;
+    } else if (*num < min) {
+        *num = min;
+    }
 }
 
 /* Maps peripherals physical memory into kernel virtual memory.
