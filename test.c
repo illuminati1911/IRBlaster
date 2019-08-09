@@ -15,7 +15,7 @@ struct Config {
    unsigned oneGapWidth;
    unsigned zeroPulseWidth;
    unsigned zeroGapWidth;
-   unsigned useTrailingPulse;
+   unsigned trailingPulseWidth;
    unsigned char code[0x200];
 } *cfg;
 
@@ -29,7 +29,7 @@ int main(){
    unsigned ogw = 1680;
    unsigned zpw = 560;
    unsigned zgw = 560;
-   unsigned utp = 1;
+   unsigned utp = 560;
    char *binary = "11001101001100100000111111110000";
    memcpy(message, &lpw, sizeof lpw);
    memcpy(message + sizeof(int), &lgw, sizeof lgw);

@@ -3,6 +3,7 @@
 #include <linux/device.h>
 #include <linux/kernel.h>
 #include <linux/fs.h>
+#include <linux/slab.h>
 #include <asm/io.h>
 
 #define DEVICE_NAME "irblaster"
@@ -74,7 +75,7 @@ struct ir_config {
    unsigned oneGapWidth;
    unsigned zeroPulseWidth;
    unsigned zeroGapWidth;
-   unsigned useTrailingPulse;
+   unsigned trailingPulseWidth;
    unsigned char code[CODE_BUFFER_LENGTH];
 } *cfg;
 
@@ -88,6 +89,7 @@ static int verify_data_integrity(void);
 static void limit_range(uint *num, uint min, uint max);
 static void map_devmem_virtmem(void);
 static void unmap_devmem_virtmem(void);
+static int generate_trms_data(int *trms);
 
 // Character driver file operations.
 //
@@ -204,7 +206,8 @@ static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *of
 }
 
 static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset) {
-    int integrity;
+    int integrity, trms_data_size;
+    int *transmission_data;
     // Save buffer to message? Why?
     //
     sprintf(usm_buffer, "%s", buffer);
@@ -220,7 +223,15 @@ static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, lof
         return integrity;
     }
     log("Message: %s", cfg->code);
+
+    trms_data_size = strlen(cfg->code) * 2 + 3;
+    transmission_data = (int*) kmalloc(trms_data_size * sizeof(int), GFP_KERNEL);
+    generate_trms_data(transmission_data);
     
+    log("LOL: %d", transmission_data[64]);
+    log("LOL: %d", transmission_data[65]);
+    log("LOL: %d", transmission_data[66]);
+
     return strlen(usm_buffer);
 }
 
@@ -232,7 +243,7 @@ static int verify_data_integrity(void) {
     limit_range(&cfg->oneGapWidth, 0, 5000);
     limit_range(&cfg->zeroPulseWidth, 0, 5000);
     limit_range(&cfg->zeroGapWidth, 0, 5000);
-    limit_range(&cfg->useTrailingPulse, 0, 1);
+    limit_range(&cfg->trailingPulseWidth, 0, 5000);
 
     for (i = 0; i < strlen(cfg->code); i++) {
         if (cfg->code[i] != '0' && cfg->code[i] != '1') {
@@ -276,6 +287,31 @@ static void unmap_devmem_virtmem(void) {
     iounmap(base_gpio);
     iounmap(base_pwm);
     iounmap(base_clk);
+}
+
+/*
+ * TODO: Add comments for this
+ */
+static int generate_trms_data(int *trms) {
+    int i;
+    int *p;
+    trms[0] = cfg->leadingPulseWidth;
+    trms[1] = cfg->leadingGapWidth;
+    p = &trms[2];
+    for (i = 0; i < strlen(cfg->code); i++) {
+        if (cfg->code[i] == '0') {
+            *(p + (i * 2)) = cfg->zeroPulseWidth;
+            *(p + (i * 2 + 1)) = cfg->zeroGapWidth;
+        } else if (cfg->code[i] == '1') {
+            *(p + (i * 2)) = cfg->onePulseWidth;
+            *(p + (i * 2 + 1)) = cfg->oneGapWidth;
+        } else {
+            return -EINVAL;
+        }
+    }
+    i--;
+    *(p + (i * 2 + 2)) = cfg->trailingPulseWidth;
+    return 0;
 }
 
 module_init(ib_init);
