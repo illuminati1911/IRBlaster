@@ -4,27 +4,36 @@
 #include <linux/kernel.h>
 #include <linux/fs.h>
 #include <linux/slab.h>
+#include <linux/delay.h>
 #include <asm/io.h>
 
 #define DEVICE_NAME "irblaster"
 #define CLASS_NAME "ir"
 
-#define BCM2835_P_BASE   0x3F000000
-#define LINUX_BLOCK_SIZE  (4 * 1024)
-#define GPIO_BASE           (BCM2835_P_BASE + 0x200000)
-#define PWM_BASE            (BCM2835_P_BASE + 0x20C000)
-#define CLK_BASE            (BCM2835_P_BASE + 0x101000)
-#define CLK_CNTL_OFFSET     40
-#define CLK_DIV_OFFSET      41
+#define BCM2835_P_BASE          0x3F000000
+#define LINUX_BLOCK_SIZE        (4 * 1024)
+#define GPIO_BASE               (BCM2835_P_BASE + 0x200000)
+#define PWM_BASE                (BCM2835_P_BASE + 0x20C000)
+#define CLK_BASE                (BCM2835_P_BASE + 0x101000)
+#define CLK_CNTL_OFFSET         40
+#define CLK_CNTL_BUSY_OFFSET    7
+#define CLK_DIV_OFFSET          41
 
-#define PWM_CONTROL_OFFSET 0
-#define PWM_STATUS_OFFSET  1
-#define PWM0_RANGE_OFFSET  4
-#define PWM0_DATA_OFFSET   5
+#define PWM_CONTROL_OFFSET      0
+#define PWM_STATUS_OFFSET       1
+#define PWM0_RANGE_OFFSET       4
+#define PWM0_DATA_OFFSET        5
+
+#define PWM_STATUS_STA1_OFFSET  9
+#define PWM_STATUS_RERR_OFFSET  3
+#define PWM_STATUS_WERR_OFFSET  2
+#define PWM_STATUS_BERR_OFFSET  8
 
 // Set GPIO as input or zero out the function selector. 
 #define INP_GPIO(g) *(base_gpio+((g )/10)) &= ~(7<<(((g)%10)*3))
 #define SET_GPIO_ALT(g,a) *(base_gpio+(((g)/10))) |= (((a)<=3?(a)+4:((a)==4?3:2))<<(((g)%10)*3))
+#define IS_ERR_FLAG(offset) (readl(&base_pwm[PWM_STATUS_OFFSET]) >> offset) & 1
+#define CLEAR_ERR_FLAG(offset) writel(base_pwm[PWM_STATUS_OFFSET] | (1 << offset), &base_pwm[PWM_STATUS_OFFSET])
 
 // Logging shorthands.
 #define log(...) printk(KERN_INFO "irblaster: " __VA_ARGS__);
@@ -86,10 +95,12 @@ static int dev_release(struct inode *, struct file *);
 static ssize_t dev_read(struct file *, char *, size_t, loff_t *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
 static int verify_data_integrity(void);
-static void limit_range(uint *num, uint min, uint max);
+static void limit_range(unsigned *num, unsigned min, unsigned max);
 static void map_devmem_virtmem(void);
 static void unmap_devmem_virtmem(void);
 static int generate_trms_data(int *trms);
+static void set_frequency(unsigned f);
+static void set_duty_cycle(unsigned n, unsigned m);
 
 // Character driver file operations.
 //
@@ -124,9 +135,7 @@ static unsigned *base_clk = 0;
  *   0x41 = enable PWM
  */
 static unsigned *pwm_ctl = 0;
-
 static unsigned *pwm_sta = 0;
-
 static unsigned *pwm_rng1 = 0;
 static unsigned *pwm_dat1 = 0;
 
@@ -208,7 +217,7 @@ static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *of
 static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset) {
     int integrity, trms_data_size;
     int *transmission_data;
-    // Save buffer to message? Why?
+    // Save buffer
     //
     sprintf(usm_buffer, "%s", buffer);
     
@@ -227,11 +236,8 @@ static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, lof
     trms_data_size = strlen(cfg->code) * 2 + 3;
     transmission_data = (int*) kmalloc(trms_data_size * sizeof(int), GFP_KERNEL);
     generate_trms_data(transmission_data);
-    
-    log("LOL: %d", transmission_data[64]);
-    log("LOL: %d", transmission_data[65]);
-    log("LOL: %d", transmission_data[66]);
 
+    kfree(transmission_data);
     return strlen(usm_buffer);
 }
 
@@ -253,7 +259,7 @@ static int verify_data_integrity(void) {
     return 0;
 }
 
-static void limit_range(uint *num, uint min, uint max) {
+static void limit_range(unsigned *num, unsigned min, unsigned max) {
     if (*num > max) {
         *num = max;
     } else if (*num < min) {
@@ -312,6 +318,94 @@ static int generate_trms_data(int *trms) {
     i--;
     *(p + (i * 2 + 2)) = cfg->trailingPulseWidth;
     return 0;
+}
+
+static void set_frequency(unsigned f) {
+    // Raspberry Pi PWM clock is running at 19.2 MHz
+    //
+    const unsigned clock_rate = 19200000;
+    long idiv;
+    unsigned max_busy_check = 5;
+    
+    // Kill the clock and zero PWM: 
+    //
+    writel(0x5A000020, clk_cntl);
+    writel(0x0, pwm_ctl); 
+
+    // Wait for busy flag to read zero
+    //
+    while ((readl(clk_cntl) >> CLK_CNTL_BUSY_OFFSET) & 1) {
+        if (!max_busy_check) {
+            return;
+        }
+        udelay(10);
+        max_busy_check--;
+    }
+    
+    // Calculate divisor and range limit
+    //
+    idiv = (long)( clock_rate / f );
+    if ( idiv < 1 ) {
+        idiv = 1;
+    } else if ( idiv >= 0x1000 ) {
+        idiv = 0xFFF;
+    }
+    
+    // Move the integer part of the divisor to CLK_DIV. (Float will be ignored)
+    //
+    writel(0x5A000000 | ( idiv << 12 ), clk_div);
+    
+    /*
+     * CLK CNTL
+     * Source:          Oscillator
+     * Clock enabled:   true
+     */
+    writel(0x5A000011, clk_cntl);
+   
+    // Clean GPIO register and set to Function 5
+    //
+    INP_GPIO(ib_gpio);
+    SET_GPIO_ALT(ib_gpio, 5);
+
+    // Disable PWM
+    //
+    writel(0x0, pwm_ctl);
+}
+
+static void set_duty_cycle(unsigned n, unsigned m) {
+    // Disable PWM
+    //
+    writel(0x0, pwm_ctl);
+    
+    // Set duty cycle n/m
+    //
+    writel(m, pwm_rng1);
+    writel(n, pwm_dat1);
+    
+    // Check channel 1 error state
+    //
+    if (!(IS_ERR_FLAG(PWM_STATUS_STA1_OFFSET))) {
+        // Fifo read error
+        //
+        if (IS_ERR_FLAG(PWM_STATUS_RERR_OFFSET)) {
+            CLEAR_ERR_FLAG(PWM_STATUS_RERR_OFFSET);
+            // Fifo write error
+            //
+            if (IS_ERR_FLAG(PWM_STATUS_WERR_OFFSET)) {
+                CLEAR_ERR_FLAG(PWM_STATUS_WERR_OFFSET);
+                // Bus error
+                //
+                if (IS_ERR_FLAG(PWM_STATUS_BERR_OFFSET)) {
+                    CLEAR_ERR_FLAG(PWM_STATUS_BERR_OFFSET);
+                }
+            }
+        }
+    }
+    
+    // Arbitrary pause and set PWM on.
+    //
+    udelay(10);
+    writel(0x1, pwm_ctl);
 }
 
 module_init(ib_init);
