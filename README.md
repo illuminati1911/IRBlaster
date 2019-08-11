@@ -14,9 +14,13 @@
 
 IRBlaster is a Linux kernel driver for transmitting IR signals on Raspberry Pi using hardware PWM.
 
+
 ## Features
 - Hardware PWM for maximum accuracy and low CPU overhead.
-- Implemented as Linux kernel driver with high-precision and time-constrained operations done within the driver.
+- Implemented as Linux kernel driver
+- All the heavy lifting done within the driver (High-precision, time-constrained operations)
+- Holds the scheduler with spinlock and disables interrupts for duration of the transmission
+- Bypasses GPIO root requirements by creating character device: `/dev/irblaster`
 - Comes with header-only usermode library for simple access as well as an usage example.
 
 ## Limitations
