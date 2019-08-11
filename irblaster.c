@@ -40,7 +40,7 @@
 #define alert(...) printk(KERN_ALERT "irblaster: Warning - " __VA_ARGS__);	
 
 #define CODE_BUFFER_LENGTH 0x200
-#define USM_BUFFER_LENGTH 0x21C
+#define USM_BUFFER_LENGTH 0x228
 
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_AUTHOR("illuminati1911");
@@ -85,6 +85,9 @@ struct ir_config {
    unsigned zeroPulseWidth;
    unsigned zeroGapWidth;
    unsigned trailingPulseWidth;
+   unsigned frequency;
+   unsigned dc_n;
+   unsigned dc_m;
    unsigned char code[CODE_BUFFER_LENGTH];
 } *cfg;
 
@@ -94,6 +97,8 @@ static int dev_open(struct inode *, struct file *);
 static int dev_release(struct inode *, struct file *);
 static ssize_t dev_read(struct file *, char *, size_t, loff_t *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
+static void pwm_exit(void);
+static void start_transmission(int *codes, size_t len);
 static int verify_data_integrity(void);
 static void limit_range(unsigned *num, unsigned min, unsigned max);
 static void map_devmem_virtmem(void);
@@ -131,8 +136,8 @@ static unsigned *base_clk = 0;
  *   6 : CLRF1
  *   7 : MSEN1
  *
- *   0x40 = disable PWM
- *   0x41 = enable PWM
+ *   0x0 = disable PWM
+ *   0x1 = enable PWM
  */
 static unsigned *pwm_ctl = 0;
 static unsigned *pwm_sta = 0;
@@ -215,7 +220,7 @@ static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *of
 }
 
 static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset) {
-    int integrity, trms_data_size;
+    int integrity_sta, trms_data_size;
     int *transmission_data;
     // Save buffer
     //
@@ -227,18 +232,80 @@ static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, lof
 
     // Check that received data is correct.
     //
-    integrity = verify_data_integrity();
-    if (integrity < 0) {
-        return integrity;
+    integrity_sta = verify_data_integrity();
+    if (integrity_sta < 0) {
+        return integrity_sta;
     }
     log("Message: %s", cfg->code);
 
+    // Generate pulse/gap data for transmission
+    //
     trms_data_size = strlen(cfg->code) * 2 + 3;
     transmission_data = (int*) kmalloc(trms_data_size * sizeof(int), GFP_KERNEL);
     generate_trms_data(transmission_data);
 
+    // Set frequency and duty cycle with arbitrary pauses to
+    // make sure hardware PWM is properly initiated.
+    //
+    set_frequency(cfg->frequency);
+    udelay(100);
+    set_duty_cycle(cfg->dc_n, cfg->dc_m);
+    udelay(100);
+    start_transmission(transmission_data, trms_data_size);
+
+    // Cleanup
+    //
+    pwm_exit();
     kfree(transmission_data);
     return strlen(usm_buffer);
+}
+
+static void pwm_exit(void) {
+    writel(0x0, pwm_ctl);
+    udelay(10);
+}
+
+/*
+ * Transmitting IR is extremely precise and time constrainted operation.
+ * Therefore, PWM is handled by onboard Hardware PWM. Switching PWM and
+ * sleeping is handled within spinlock, which also disables interrupts for
+ * the duration of the transmission.
+ * 
+ * This is to avoid overhead of the OS scheduler and context switching.
+ *
+ */
+static void start_transmission(int *codes, size_t len) {
+    int i;
+    unsigned long irq_flags;
+    ktime_t edge;
+    s32 delta;
+
+    // Hold CPU and disable interrupts
+    //
+    spin_lock_irqsave(&transmit_spinlock, irq_flags);
+    edge = ktime_get();
+    for (i = 0; i < len; i++) {
+        if (i % 2 == 0) {
+            writel(0x1, pwm_ctl);
+        }
+        edge = ktime_add_us(edge, codes[i]);
+		delta = ktime_us_delta(edge, ktime_get());
+		if (delta >= 2000) {
+            usleep_range(delta, delta + 10);
+		} else if (delta > 0) {
+			udelay(delta);
+		}
+        if (i % 2 == 0) {
+            writel(0x0, pwm_ctl);
+        }
+    }
+
+    // Release CPU and restore interrupts
+    //
+    spin_unlock_irqrestore(&transmit_spinlock, irq_flags);
+    writel(0x0, pwm_ctl);
+    udelay(100);
+    log("Transmitted");
 }
 
 static int verify_data_integrity(void) {
@@ -401,11 +468,6 @@ static void set_duty_cycle(unsigned n, unsigned m) {
             }
         }
     }
-    
-    // Arbitrary pause and set PWM on.
-    //
-    udelay(10);
-    writel(0x1, pwm_ctl);
 }
 
 module_init(ib_init);

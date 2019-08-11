@@ -16,10 +16,13 @@ struct Config {
    unsigned zeroPulseWidth;
    unsigned zeroGapWidth;
    unsigned trailingPulseWidth;
+   unsigned frequency;
+   unsigned dc_n;
+   unsigned dc_m;
    unsigned char code[0x200];
 } *cfg;
 
-char message[0x21C];
+char message[0x228];
 
 int main(){
    char *buffer;
@@ -30,6 +33,9 @@ int main(){
    unsigned zpw = 560;
    unsigned zgw = 560;
    unsigned utp = 560;
+   unsigned f = 38000;
+   unsigned dc_n = 50;
+   unsigned dc_m = 100;
    char *binary = "11001101001100100000111111110000";
    memcpy(message, &lpw, sizeof lpw);
    memcpy(message + sizeof(int), &lgw, sizeof lgw);
@@ -38,7 +44,10 @@ int main(){
    memcpy(message + (sizeof(int) * 4), &zpw, sizeof zpw);
    memcpy(message + (sizeof(int) * 5), &zgw, sizeof zgw);
    memcpy(message + (sizeof(int) * 6), &utp, sizeof utp);
-   memcpy(message + (sizeof(int) * 7), binary, 0x200);
+   memcpy(message + (sizeof(int) * 7), &f, sizeof f);
+   memcpy(message + (sizeof(int) * 8), &dc_n, sizeof dc_n);
+   memcpy(message + (sizeof(int) * 9), &dc_m, sizeof dc_m);
+   memcpy(message + (sizeof(int) * 10), binary, 0x200);
    /*cfg = (struct Config *)&message;
    printf("Value: %d\n", cfg->useTrailingPulse);
    printf("Value: %s\n", cfg->code);*/
