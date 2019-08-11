@@ -47,7 +47,7 @@ MODULE_AUTHOR("illuminati1911");
 MODULE_DESCRIPTION("An infrared LED driver for Raspberry Pi.");
 MODULE_VERSION("0.1");
 
-// Driver major number.
+// Driver major number
 //
 static int ib_mn;
 
