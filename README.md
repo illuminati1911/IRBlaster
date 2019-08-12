@@ -10,19 +10,19 @@ IRBlaster is a Linux kernel driver for transmitting IR signals on Raspberry Pi u
 
 
 ## Features
-- Hardware PWM for maximum accuracy and low CPU overhead.
+- Hardware PWM for maximum accuracy and low CPU overhead
 - Implemented as Linux kernel driver
 - All the heavy lifting done within the driver (High-precision, time-constrained operations)
 - Holds the scheduler with spinlock and disables interrupts for duration of the transmission
 - Bypasses GPIO root requirements by creating character device: `/dev/irblaster`
-- Comes with header-only usermode library for simple access as well as an usage example.
+- Comes with header-only usermode library for simple access as well as an usage example
+- Supports all Raspberry Pi's from zero to 4 (Only tested with 3B+)
 
 ## Limitations
-- Supports only Raspberry Pi 2 and 3 (and maybe 4?) at the moment (this will change in the near future).
 - Currently only GPIO 18 supported.
 
 ## Portability
-- Should work with any "modern" Raspbian installation running on Raspberry Pi 2/3/(4?)
+- Should work with any "modern" Raspbian installation
 - Should also work on other distributions (not tested)
 
 ## Installation
@@ -32,7 +32,6 @@ $ apt-get update -y
 $ apt-get upgrade -y
 ```
 ### Kernel headers
-
 In order to build linux kernel modules, you'll have to have matching kernel headers to the kernel you are running.
 
 If you are on Raspbian, you can just run:
@@ -67,8 +66,8 @@ KERNEL=="irblaster", SUBSYSTEM=="ir", MODE="0666"
 ### Build the driver
 Build the driver (and example):
 ```bash
-$ make         # build the driver and user mode example
-$ make kernel  # build only the driver
+$ make         # build the driver for rpi 2/3 (most common target) and user mode example
+$ make rpi#    # replace the # with anything from 0-4 depending on your Raspberry Pi model.
 $ make example # build only the user mode example
 ```
 
@@ -116,8 +115,7 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 
 ## Roadmap
 ### Near future
-- Support for different GPIOs
-- Support for all Raspberry Pi devices
+- Support for different GPIOs and PWM channels
 ### Some day
 - Direct Memory Access (DMA) support to transmit on any GPIO
 

@@ -10,11 +10,17 @@
 #define DEVICE_NAME "irblaster"
 #define CLASS_NAME "ir"
 
-#define BCM2835_P_BASE          0x3F000000
+// If BCM peripherals base address is not defined
+// use most popular one = rpi 2/3
+//
+#ifndef BCM_P_BASE
+#define BCM_P_BASE          0x3F000000
+#endif
+
 #define LINUX_BLOCK_SIZE        (4 * 1024)
-#define GPIO_BASE               (BCM2835_P_BASE + 0x200000)
-#define PWM_BASE                (BCM2835_P_BASE + 0x20C000)
-#define CLK_BASE                (BCM2835_P_BASE + 0x101000)
+#define GPIO_BASE               (BCM_P_BASE + 0x200000)
+#define PWM_BASE                (BCM_P_BASE + 0x20C000)
+#define CLK_BASE                (BCM_P_BASE + 0x101000)
 #define CLK_CNTL_OFFSET         40
 #define CLK_CNTL_BUSY_OFFSET    7
 #define CLK_DIV_OFFSET          41
