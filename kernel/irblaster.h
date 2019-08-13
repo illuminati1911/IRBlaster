@@ -1,11 +1,11 @@
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/device.h>
-#include <linux/kernel.h>
-#include <linux/fs.h>
-#include <linux/slab.h>
-#include <linux/delay.h>
 #include <asm/io.h>
+#include <linux/delay.h>
+#include <linux/device.h>
+#include <linux/fs.h>
+#include <linux/init.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/slab.h>
 
 #define DEVICE_NAME "irblaster"
 #define CLASS_NAME "ir"
@@ -14,36 +14,40 @@
 // use most popular one = rpi 2/3
 //
 #ifndef BCM_P_BASE
-#define BCM_P_BASE          0x3F000000
+#define BCM_P_BASE 0x3F000000
 #endif
 
-#define LINUX_BLOCK_SIZE        (4 * 1024)
-#define GPIO_BASE               (BCM_P_BASE + 0x200000)
-#define PWM_BASE                (BCM_P_BASE + 0x20C000)
-#define CLK_BASE                (BCM_P_BASE + 0x101000)
-#define CLK_CNTL_OFFSET         40
-#define CLK_CNTL_BUSY_OFFSET    7
-#define CLK_DIV_OFFSET          41
+#define LINUX_BLOCK_SIZE (4 * 1024)
+#define GPIO_BASE (BCM_P_BASE + 0x200000)
+#define PWM_BASE (BCM_P_BASE + 0x20C000)
+#define CLK_BASE (BCM_P_BASE + 0x101000)
+#define CLK_CNTL_OFFSET 40
+#define CLK_CNTL_BUSY_OFFSET 7
+#define CLK_DIV_OFFSET 41
 
-#define PWM_CONTROL_OFFSET      0
-#define PWM_STATUS_OFFSET       1
-#define PWM0_RANGE_OFFSET       4
-#define PWM0_DATA_OFFSET        5
+#define PWM_CONTROL_OFFSET 0
+#define PWM_STATUS_OFFSET 1
+#define PWM0_RANGE_OFFSET 4
+#define PWM0_DATA_OFFSET 5
 
-#define PWM_STATUS_STA1_OFFSET  9
-#define PWM_STATUS_RERR_OFFSET  3
-#define PWM_STATUS_WERR_OFFSET  2
-#define PWM_STATUS_BERR_OFFSET  8
+#define PWM_STATUS_STA1_OFFSET 9
+#define PWM_STATUS_RERR_OFFSET 3
+#define PWM_STATUS_WERR_OFFSET 2
+#define PWM_STATUS_BERR_OFFSET 8
 
-// Set GPIO as input or zero out the function selector. 
-#define INP_GPIO(g) *(base_gpio+((g )/10)) &= ~(7<<(((g)%10)*3))
-#define SET_GPIO_ALT(g,a) *(base_gpio+(((g)/10))) |= (((a)<=3?(a)+4:((a)==4?3:2))<<(((g)%10)*3))
+// Set GPIO as input or zero out the function selector.
+#define INP_GPIO(g) *(base_gpio + ((g) / 10)) &= ~(7 << (((g) % 10) * 3))
+#define SET_GPIO_ALT(g, a)       \
+  *(base_gpio + (((g) / 10))) |= \
+      (((a) <= 3 ? (a) + 4 : ((a) == 4 ? 3 : 2)) << (((g) % 10) * 3))
 #define IS_ERR_FLAG(offset) (readl(&base_pwm[PWM_STATUS_OFFSET]) >> offset) & 1
-#define CLEAR_ERR_FLAG(offset) writel(base_pwm[PWM_STATUS_OFFSET] | (1 << offset), &base_pwm[PWM_STATUS_OFFSET])
+#define CLEAR_ERR_FLAG(offset)                        \
+  writel(base_pwm[PWM_STATUS_OFFSET] | (1 << offset), \
+         &base_pwm[PWM_STATUS_OFFSET])
 
 // Logging shorthands.
 #define log(...) printk(KERN_INFO "irblaster: " __VA_ARGS__);
-#define alert(...) printk(KERN_ALERT "irblaster: Warning - " __VA_ARGS__);	
+#define alert(...) printk(KERN_ALERT "irblaster: Warning - " __VA_ARGS__);
 
 #define CODE_BUFFER_LENGTH 0x200
 #define USM_BUFFER_LENGTH 0x228
@@ -57,17 +61,17 @@ MODULE_VERSION("0.1");
 //
 static int ib_mn;
 
-/* 
+/*
  * BCM layout number of the GPIO pin used to trasmit IR.
  *
- * You can change this to any GPIO supporting hardware PWM and 
+ * You can change this to any GPIO supporting hardware PWM and
  * using channel 0 on your Raspberry Pi. On RPi 3 that would be
- * 12 and 18. GPIO 18 is available on all RPis. 
+ * 12 and 18. GPIO 18 is available on all RPis.
  *
  */
 static unsigned int ib_gpio = 18;
-static struct class* ib_class = NULL;
-static struct device* ib_device = NULL;
+static struct class *ib_class = NULL;
+static struct device *ib_device = NULL;
 
 // Mutex to control/limit access to the device.
 //
@@ -84,18 +88,18 @@ static char usm_buffer[USM_BUFFER_LENGTH] = {0};
 // Infrared config to which the user space data will be mapped into.
 //
 struct ir_config {
-   unsigned leadingPulseWidth;
-   unsigned leadingGapWidth;
-   unsigned onePulseWidth;
-   unsigned oneGapWidth;
-   unsigned zeroPulseWidth;
-   unsigned zeroGapWidth;
-   unsigned trailingPulseWidth;
-   unsigned frequency;
-   unsigned dc_n;
-   unsigned dc_m;
-   unsigned char code[CODE_BUFFER_LENGTH];
-} *cfg;
+  unsigned leadingPulseWidth;
+  unsigned leadingGapWidth;
+  unsigned onePulseWidth;
+  unsigned oneGapWidth;
+  unsigned zeroPulseWidth;
+  unsigned zeroGapWidth;
+  unsigned trailingPulseWidth;
+  unsigned frequency;
+  unsigned dc_n;
+  unsigned dc_m;
+  unsigned char code[CODE_BUFFER_LENGTH];
+} * cfg;
 
 // Function definitions
 //
@@ -125,7 +129,8 @@ static struct file_operations fops = {
 /* BCM2835 Device registers:
  *
  * Size: All are 32 bit
- * Reference: https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
+ * Reference:
+ * https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
  *
  */
 static unsigned *base_gpio = 0;
@@ -172,7 +177,7 @@ static unsigned *pwm_sta = 0;
 
 /*
  *   RNG1: Channel 1 range
- *   This defines the period length of PWM.      
+ *   This defines the period length of PWM.
  *
  *   P. 145, BCM2835 ARM Peripherals
  */
@@ -191,7 +196,7 @@ static unsigned *pwm_dat1 = 0;
  *   DIV: Clock divisor
  *
  *   The BCM2835 documentation is missing specs for the PWM CLK,
- *   but it's completely similar to the general purpose GPIO clocks: 
+ *   but it's completely similar to the general purpose GPIO clocks:
  *
  *   P. 105-108, BCM2835 ARM Peripherals
  */

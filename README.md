@@ -111,7 +111,9 @@ For detailed example of writing to the device see `user/ib.h` user mode library.
 All the variables are 32-bit unsigned integers except the data string which can be up to 200 bytes. 
 
 ## Contributing
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+- Pull requests are welcome.
+- For major changes, please open an issue first to discuss what you would like to change.
+- Project uses Google C style. You can use the `clang-format` bash script to automatically format all the `.h` and `.c` files in the project.
 
 ## Roadmap
 ### Near future
