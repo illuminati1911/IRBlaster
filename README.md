@@ -15,7 +15,7 @@ IRBlaster is a Linux kernel driver for transmitting IR signals on Raspberry Pi u
 - All the heavy lifting done within the driver (High-precision, time-constrained operations)
 - Holds the scheduler with spinlock and disables interrupts for duration of the transmission
 - Bypasses GPIO root requirements by creating character device: `/dev/irblaster`
-- Comes with header-only usermode library for simple access as well as an usage example
+- Comes with header-only usermode library for simple access as well as usage examples (Go & C)
 - Supports all Raspberry Pi devices from zero to 4 (Only tested with 3B+)
 
 ## Limitations
@@ -66,9 +66,9 @@ KERNEL=="irblaster", SUBSYSTEM=="ir", MODE="0666"
 ### Build the driver
 Build the driver (and example):
 ```bash
-$ make         # build the driver for rpi 2/3 (most common target) and user mode example
+$ make         # build the driver for rpi 2/3 (most common target) and usage examples (Go & C)
 $ make rpi#    # replace the # with anything from 0-4 depending on your Raspberry Pi model.
-$ make example # build only the user mode example
+$ make example # build only the usage examples (Go & C)
 ```
 
 ### Load the driver to Kernel

@@ -39,4 +39,9 @@ int sendIR(unsigned leadingPulseWidth, unsigned leadingGapWidth,
     perror("Failed to write the message to the device.");
     return errno;
   }
+  ret = close(fd);
+  if (ret < 0) {
+    perror("Failed to close the device.");
+    return errno;
+  }
 }

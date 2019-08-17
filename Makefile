@@ -5,6 +5,7 @@ all: rpi3 example
 .PHONY: example
 example:
 	$(CC) example/test.c -o test
+	go build -o test_go example/test.go
 
 rpi0: rpi1
 
